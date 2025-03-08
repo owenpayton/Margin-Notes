@@ -1075,7 +1075,7 @@ const PDFMarginNotes: React.FC = () => {
       {/* Anki Export Modal */}
       {showAnkiModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-80 flex flex-col overflow-hidden">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full min-h-[500px] h-[70vh] flex flex-col overflow-hidden gap-4">
             <div className="px-6 py-4 border-b border-stone-200 flex justify-between items-center">
               <h2 className="text-xl font-medium text-stone-800">Export Notes to Anki</h2>
               <button 
@@ -1086,7 +1086,7 @@ const PDFMarginNotes: React.FC = () => {
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 min-h-[300px]">
               <div className="mb-4">
                 <p className="text-stone-600 mb-2">Select notes to export and create cloze deletions:</p>
                 <ol className="list-decimal list-inside text-sm text-stone-500 mb-4 pl-2">
