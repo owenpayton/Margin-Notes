@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Header from './Header';
 
 // For PDF.js loading
 const pdfjsVersion = '3.4.120';
@@ -97,13 +98,18 @@ const PDFMarginNotes: React.FC = () => {
   });
   const [outline, setOutline] = useState<PDFOutlineItem[] | null>(null);
   const [showOutline, setShowOutline] = useState<boolean>(false);
-
+  
+  // New state for page input functionality
+  const [isEditingPageNumber, setIsEditingPageNumber] = useState<boolean>(false);
+  const [pageInputValue, setPageInputValue] = useState<string>("");
+  
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importNotesRef = useRef<HTMLInputElement>(null);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   const notesContainerRef = useRef<HTMLDivElement>(null);
+  const pageInputRef = useRef<HTMLInputElement>(null);
 
   // Custom styles for components
   useEffect(() => {
@@ -382,6 +388,36 @@ const PDFMarginNotes: React.FC = () => {
       setCurrentPage(currentPage + 1);
     }
   };
+  
+  // Go to specific page function
+  const goToPage = (pageNumber: number) => {
+    if (pageNumber >= 1 && pageNumber <= totalPages) {
+      setCurrentPage(pageNumber);
+    }
+  };
+  
+  // Handle page input submission
+  const handlePageInputSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const pageNumber = parseInt(pageInputValue, 10);
+    if (!isNaN(pageNumber)) {
+      goToPage(pageNumber);
+    }
+    setIsEditingPageNumber(false);
+  };
+  
+  // Handle page input blur
+  const handlePageInputBlur = () => {
+    setIsEditingPageNumber(false);
+  };
+  
+  // Focus input when editing begins
+  useEffect(() => {
+    if (isEditingPageNumber && pageInputRef.current) {
+      pageInputRef.current.focus();
+      pageInputRef.current.select();
+    }
+  }, [isEditingPageNumber]);
 
   // Zoom functions
   const zoomIn = () => {
@@ -865,9 +901,32 @@ const PDFMarginNotes: React.FC = () => {
               >
                 ←
               </button>
-              <span className="px-2 py-1 text-xs text-stone-600">
-                {currentPage} / {totalPages}
-              </span>
+              
+              {isEditingPageNumber ? (
+                <form onSubmit={handlePageInputSubmit} className="px-1 py-0.5">
+                  <input
+                    ref={pageInputRef}
+                    type="text"
+                    value={pageInputValue}
+                    onChange={(e) => setPageInputValue(e.target.value)}
+                    onBlur={handlePageInputBlur}
+                    className="w-12 text-center text-xs bg-white border border-amber-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 py-0.5"
+                    aria-label="Go to page"
+                  />
+                </form>
+              ) : (
+                <span 
+                  className="px-2 py-1 text-xs text-stone-600 cursor-pointer hover:bg-stone-300 rounded"
+                  onDoubleClick={() => {
+                    setIsEditingPageNumber(true);
+                    setPageInputValue(currentPage.toString());
+                  }}
+                  title="Double-click to jump to page"
+                >
+                  {currentPage} / {totalPages}
+                </span>
+              )}
+              
               <button
                 onClick={goToNextPage}
                 disabled={currentPage >= totalPages}
@@ -1174,5 +1233,3 @@ const PDFMarginNotes: React.FC = () => {
     </div>
   );
 };
-
-export default PDFMarginNotes;
