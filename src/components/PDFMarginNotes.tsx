@@ -948,9 +948,9 @@ const PDFMarginNotes: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="flex" style={{ width: showOutline ? "calc(100% - 256px)" : "calc(100% - 256px)" }}> {/* Fixed layout structure */}
-                {/* PDF Viewer - Now with fixed container */}
-                <div className="relative" style={{ flex: "1 0 auto", minWidth: 0 }}>
+              <div className="flex flex-1">
+                {/* PDF Viewer - Now with proper flex layout */}
+                <div className="flex-1 min-w-0 relative">
                   <div 
                     ref={pdfContainerRef} 
                     className="absolute inset-0 overflow-auto cursor-text bg-stone-100"
@@ -977,10 +977,10 @@ const PDFMarginNotes: React.FC = () => {
                   </div>
                 </div>
                 
-                {/* Margin Notes Container - Fixed width that doesn't move */}
+                {/* Current Page Notes Container */}
                 <div 
                   ref={notesContainerRef}
-                  className="w-64 bg-stone-50 border-l border-stone-200 flex flex-col h-full overflow-hidden relative flex-shrink-0"
+                  className="w-64 bg-stone-50 border-l border-stone-200 flex flex-col h-full overflow-hidden relative flex-shrink-0 z-20"
                 >
                   <div className="absolute inset-0 pointer-events-none bg-grain opacity-8 z-10"></div>
                   <div className="px-3 py-2 bg-stone-100 border-b border-stone-200">
@@ -1038,8 +1038,8 @@ const PDFMarginNotes: React.FC = () => {
           )}
         </div>
         
-        {/* Notes Sidebar */}
-        <div className="w-64 bg-stone-50 border-l border-stone-200 overflow-y-auto hidden lg:block flex-shrink-0">
+        {/* All Notes Sidebar */}
+        <div className="w-64 bg-stone-50 border-l border-stone-200 overflow-y-auto flex-shrink-0 z-20">
           <div className="px-4 py-3 border-b border-stone-200">
             <h2 className="font-medium text-stone-800">All Notes</h2>
           </div>
