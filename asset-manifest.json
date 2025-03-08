@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/pdf-margin-notes/static/css/main.1b49e9fe.css",
+    "main.js": "/pdf-margin-notes/static/js/main.080564be.js",
+    "static/js/453.b3db8b0b.chunk.js": "/pdf-margin-notes/static/js/453.b3db8b0b.chunk.js",
+    "index.html": "/pdf-margin-notes/index.html",
+    "main.1b49e9fe.css.map": "/pdf-margin-notes/static/css/main.1b49e9fe.css.map",
+    "main.080564be.js.map": "/pdf-margin-notes/static/js/main.080564be.js.map",
+    "453.b3db8b0b.chunk.js.map": "/pdf-margin-notes/static/js/453.b3db8b0b.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.1b49e9fe.css",
+    "static/js/main.080564be.js"
+  ]
+}
