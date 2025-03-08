@@ -903,7 +903,7 @@ const PDFMarginNotes: React.FC = () => {
       <div className="flex flex-1 overflow-hidden">
         {/* Table of Contents / Outline Panel */}
         {showOutline && isFileLoaded && (
-          <div className="w-64 bg-stone-50 border-r border-stone-200 overflow-y-auto flex flex-col">
+          <div className="w-64 bg-stone-50 border-r border-stone-200 overflow-y-auto flex flex-col flex-shrink-0">
             <div className="px-4 py-3 border-b border-stone-200 flex justify-between items-center">
               <h2 className="font-medium text-stone-800">Table of Contents</h2>
               <button 
@@ -930,7 +930,7 @@ const PDFMarginNotes: React.FC = () => {
           </div>
         )}
         {/* PDF Container with Margin */}
-        <div className="flex-1 flex overflow-auto bg-stone-200 relative">
+        <div className="flex-1 flex bg-stone-200 relative">
           {!isFileLoaded ? (
             <div className="flex flex-col items-center justify-center h-full w-full space-y-4 p-8 text-center">
               <div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center border-2 border-amber-300">
@@ -948,35 +948,39 @@ const PDFMarginNotes: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="flex flex-1">
-                {/* PDF Viewer */}
-                <div 
-                  ref={pdfContainerRef} 
-                  className="flex-1 overflow-auto p-4 cursor-text relative bg-stone-100"
-                  onClick={handlePdfClick}
-                >
-                  <div className="relative">
-                    <div className="absolute inset-0 pointer-events-none bg-grain opacity-5 z-10 rounded"></div>
-                    <div className="mx-auto relative bg-white p-2 shadow-md rounded">
-                      {pdfDoc ? (
-                        <canvas ref={canvasRef} className="mx-auto" />
-                      ) : (
-                        <div className="flex items-center justify-center" style={{ height: "500px", width: "400px" }}>
-                          <div className="text-center text-stone-400">
-                            <p className="text-2xl font-medium mb-2">Demo Mode</p>
-                            <p className="text-lg">Page {currentPage} of {totalPages}</p>
-                            <p className="mt-6 text-sm">Click anywhere to add a note</p>
-                          </div>
+              <div className="flex" style={{ width: showOutline ? "calc(100% - 256px)" : "calc(100% - 256px)" }}> {/* Fixed layout structure */}
+                {/* PDF Viewer - Now with fixed container */}
+                <div className="relative" style={{ flex: "1 0 auto", minWidth: 0 }}>
+                  <div 
+                    ref={pdfContainerRef} 
+                    className="absolute inset-0 overflow-auto cursor-text bg-stone-100"
+                    onClick={handlePdfClick}
+                  >
+                    <div className="p-4 flex justify-center">
+                      <div className="relative">
+                        <div className="absolute inset-0 pointer-events-none bg-grain opacity-5 z-10 rounded"></div>
+                        <div className="relative bg-white p-2 shadow-md rounded inline-block"> {/* Changed to inline-block */}
+                          {pdfDoc ? (
+                            <canvas ref={canvasRef} />
+                          ) : (
+                            <div className="flex items-center justify-center" style={{ height: "500px", width: "400px" }}>
+                              <div className="text-center text-stone-400">
+                                <p className="text-2xl font-medium mb-2">Demo Mode</p>
+                                <p className="text-lg">Page {currentPage} of {totalPages}</p>
+                                <p className="mt-6 text-sm">Click anywhere to add a note</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                 </div>
                 
-                {/* Margin Notes Container */}
+                {/* Margin Notes Container - Fixed width that doesn't move */}
                 <div 
                   ref={notesContainerRef}
-                  className="w-64 bg-stone-50 border-l border-stone-200 flex flex-col h-full overflow-hidden relative"
+                  className="w-64 bg-stone-50 border-l border-stone-200 flex flex-col h-full overflow-hidden relative flex-shrink-0"
                 >
                   <div className="absolute inset-0 pointer-events-none bg-grain opacity-8 z-10"></div>
                   <div className="px-3 py-2 bg-stone-100 border-b border-stone-200">
@@ -1035,7 +1039,7 @@ const PDFMarginNotes: React.FC = () => {
         </div>
         
         {/* Notes Sidebar */}
-        <div className="w-64 bg-stone-50 border-l border-stone-200 overflow-y-auto hidden lg:block">
+        <div className="w-64 bg-stone-50 border-l border-stone-200 overflow-y-auto hidden lg:block flex-shrink-0">
           <div className="px-4 py-3 border-b border-stone-200">
             <h2 className="font-medium text-stone-800">All Notes</h2>
           </div>
