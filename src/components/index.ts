@@ -1,1 +1,14 @@
 export { default as PDFMarginNotes } from './PDFMarginNotes';
+export { default as Header } from './Header';
+export { default as PDFViewer } from './PDFViewer';
+export { default as NotesList } from './NotesList';
+export { default as NoteItem } from './NoteItem';
+export { default as AllNotesSidebar } from './AllNotesSidebar';
+export { default as OutlinePanel } from './OutlinePanel';
+export { default as OutlineItem } from './OutlineItem';
+export { default as AnkiExportModal } from './AnkiExportModal';
+export { default as ErrorDisplay } from './ErrorDisplay';
+export { default as ImportNotesButton } from './ImportNotesButton';
+export { default as ExportNotesButton } from './ExportNotesButton';
+export { default as AnkiExportButton } from './AnkiExportButton';
+export * from './types';

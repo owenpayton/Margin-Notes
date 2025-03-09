@@ -1,63 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Header from './Header';
+import PDFViewer from './PDFViewer';
+import NotesList from './NotesList';
+import AllNotesSidebar from './AllNotesSidebar';
+import OutlinePanel from './OutlinePanel';
+import ErrorDisplay from './ErrorDisplay';
+import ImportNotesButton from './ImportNotesButton';
+import ExportNotesButton from './ExportNotesButton';
+import { Note, PDFDocumentProxy, PDFOutlineItem, PDFPageProxy, PDFViewport, PDFRenderContext, NOTE_COLORS, NOTE_ROTATIONS } from './types';
 
 // For PDF.js loading
 const pdfjsVersion = '3.4.120';
 
-// Note colors (warm palette)
-const NOTE_COLORS = ['bg-amber-100 border-amber-300', 'bg-rose-100 border-rose-300', 'bg-orange-100 border-orange-300', 'bg-stone-100 border-stone-300', 'bg-yellow-100 border-yellow-300'];
-
-// Slight rotations for notes
-const NOTE_ROTATIONS = ['-rotate-1', 'rotate-1', '-rotate-0.5', 'rotate-0.5', 'rotate-0'];
-
-// Define types for our application
-interface Note {
-  id: string;
-  pageNumber: number;
-  yPosition: number;
-  content: string;
-  createdAt: string;
-  updatedAt?: string;
-  color: string;
-  rotation: string;
-  isEditing: boolean;
-  hasCloze?: boolean;
-}
-
-interface PDFDocumentProxy {
-  numPages: number;
-  getPage: (pageNumber: number) => Promise<PDFPageProxy>;
-  getOutline: () => Promise<PDFOutlineItem[] | null>;
-  getDestination?: (dest: string) => Promise<any[] | null>;
-}
-
-interface PDFOutlineItem {
-  title: string;
-  bold?: boolean;
-  italic?: boolean;
-  color?: number[];
-  dest?: string | any[];
-  url?: string;
-  unsafeUrl?: string;
-  newWindow?: boolean;
-  count?: number;
-  items?: PDFOutlineItem[];
-}
-
-interface PDFPageProxy {
-  getViewport: (options: { scale: number }) => PDFViewport;
-  render: (renderContext: PDFRenderContext) => { promise: Promise<void> };
-}
-
-interface PDFViewport {
-  height: number;
-  width: number;
-}
-
-interface PDFRenderContext {
-  canvasContext: CanvasRenderingContext2D;
-  viewport: PDFViewport;
-}
-
+// Define window interface for PDF.js
 declare global {
   interface Window {
     pdfjsLib: {
@@ -89,8 +44,6 @@ const PDFMarginNotes: React.FC = () => {
   const [isFileLoaded, setIsFileLoaded] = useState<boolean>(false);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [isPdfLibReady, setIsPdfLibReady] = useState<boolean>(false);
-  const [showAnkiModal, setShowAnkiModal] = useState<boolean>(false);
-  const [selectedNotesForAnki, setSelectedNotesForAnki] = useState<string[]>([]);
   const [clozeCounter, setClozeCounter] = useState<number>(1);
   const [lastPdfName, setLastPdfName] = useState<string>(() => {
     return localStorage.getItem('pdfMarginNotes_lastPdfName') || '';
@@ -101,26 +54,43 @@ const PDFMarginNotes: React.FC = () => {
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const importNotesRef = useRef<HTMLInputElement>(null);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   const notesContainerRef = useRef<HTMLDivElement>(null);
 
   // Custom styles for components
   useEffect(() => {
+    // Add grain background style
     const style = document.createElement('style');
     style.textContent = `
       textarea {
+        display: block !important;
         border: none !important;
         outline: none !important;
         box-shadow: none !important;
         -webkit-appearance: none !important;
+        padding: 0 !important;
+        background: transparent !important;
+        width: 100% !important;
+        min-height: 100px !important;
+        font-family: serif !important;
+        resize: none !important;
+        font-size: 0.875rem !important;
+        line-height: 1.5 !important;
+        color: inherit !important;
       }
+      
       textarea:focus {
         border: none !important;
         outline: none !important;
         box-shadow: none !important;
         -webkit-appearance: none !important;
+        ring: 0 !important;
       }
+      
+      textarea::placeholder {
+        color: rgba(120, 113, 108, 0.5);
+      }
+      
       .bg-grain {
         background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
         opacity: 0.1;
@@ -156,104 +126,36 @@ const PDFMarginNotes: React.FC = () => {
     };
   }, []);
   
-  // Load PDF.js from CDN and check for saved session
+  // Load PDF.js
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     const script = document.createElement('script');
-    script.src = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.min.js`;
+    script.src = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.min.js`;
     script.async = true;
     
     script.onload = () => {
+      // Set worker source
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
-        `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
+        `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.js`;
+      
       setIsPdfLibReady(true);
       
-      // Check if we have saved notes and PDF data
-      const savedNotes = localStorage.getItem('pdfMarginNotes_notes');
+      // Try to load the last PDF if available
       const savedPdfData = localStorage.getItem('pdfMarginNotes_pdfData');
-      
-      if (savedNotes && JSON.parse(savedNotes).length > 0) {
-        const notesCount = JSON.parse(savedNotes).length;
-        
-        // Try to load the saved PDF if available
-        if (savedPdfData) {
-          try {
-            const pdfDataArray = JSON.parse(savedPdfData);
-            const typedArray = new Uint8Array(pdfDataArray);
-            
-            const loadingTask = window.pdfjsLib.getDocument({ data: typedArray });
-            loadingTask.promise.then(pdf => {
-              setPdfDoc(pdf);
-              setTotalPages(pdf.numPages);
-              setIsFileLoaded(true);
-              
-              // Show notification about restored session
-              const notification = document.createElement('div');
-              notification.className = 'fixed bottom-4 right-4 bg-green-100 border border-green-300 text-green-800 px-4 py-3 rounded-md shadow-md z-50';
-              notification.innerHTML = `
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="font-medium">Session Fully Restored</p>
-                    <p class="text-sm">${notesCount} notes and PDF loaded from your previous session</p>
-                  </div>
-                  <button class="ml-4 text-green-600 hover:text-green-800" onclick="this.parentNode.parentNode.remove()">✕</button>
-                </div>
-              `;
-              document.body.appendChild(notification);
-              
-              // Auto-remove after 5 seconds
-              setTimeout(() => {
-                if (document.body.contains(notification)) {
-                  document.body.removeChild(notification);
-                }
-              }, 5000);
-            }).catch(err => {
-              console.warn('Could not load saved PDF:', err);
-              
-              // Show notification about partially restored session
-              const notification = document.createElement('div');
-              notification.className = 'fixed bottom-4 right-4 bg-yellow-100 border border-yellow-300 text-yellow-800 px-4 py-3 rounded-md shadow-md z-50';
-              notification.innerHTML = `
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="font-medium">Session Partially Restored</p>
-                    <p class="text-sm">${notesCount} notes loaded, but PDF needs to be reopened</p>
-                  </div>
-                  <button class="ml-4 text-yellow-600 hover:text-yellow-800" onclick="this.parentNode.parentNode.remove()">✕</button>
-                </div>
-              `;
-              document.body.appendChild(notification);
-              
-              // Auto-remove after 5 seconds
-              setTimeout(() => {
-                if (document.body.contains(notification)) {
-                  document.body.removeChild(notification);
-                }
-              }, 5000);
-            });
-          } catch (err) {
-            console.warn('Error parsing saved PDF data:', err);
-          }
-        } else {
-          // Show notification about partially restored session
-          const notification = document.createElement('div');
-          notification.className = 'fixed bottom-4 right-4 bg-yellow-100 border border-yellow-300 text-yellow-800 px-4 py-3 rounded-md shadow-md z-50';
-          notification.innerHTML = `
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="font-medium">Session Partially Restored</p>
-                <p class="text-sm">${notesCount} notes loaded, please reopen your PDF</p>
-              </div>
-              <button class="ml-4 text-yellow-600 hover:text-yellow-800" onclick="this.parentNode.parentNode.remove()">✕</button>
-            </div>
-          `;
-          document.body.appendChild(notification);
+      if (savedPdfData && lastPdfName) {
+        try {
+          const binaryData = atob(savedPdfData);
+          const len = binaryData.length;
+          const bytes = new Uint8Array(len);
           
-          // Auto-remove after 5 seconds
-          setTimeout(() => {
-            if (document.body.contains(notification)) {
-              document.body.removeChild(notification);
-            }
-          }, 5000);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryData.charCodeAt(i);
+          }
+          
+          loadPdf(bytes);
+          } catch (err) {
+          console.error('Error loading saved PDF:', err);
         }
       }
     };
@@ -279,52 +181,41 @@ const PDFMarginNotes: React.FC = () => {
     }
 
     setError(null);
+    
     try {
       const fileReader = new FileReader();
 
-      fileReader.onload = async (e: ProgressEvent<FileReader>) => {
-        if (!e.target?.result) return;
-        
-        const typedArray = new Uint8Array(e.target.result as ArrayBuffer);
-        
-        // Save the PDF data to localStorage (if it's not too large)
+      fileReader.onload = async (e) => {
         try {
-          if (typedArray.length < 10 * 1024 * 1024) { // Only save if less than 10MB
-            localStorage.setItem('pdfMarginNotes_pdfData', JSON.stringify(Array.from(typedArray)));
-          }
-        } catch (err) {
-          console.warn('Could not save PDF data to localStorage:', err);
-        }
-        
-        try {
-          // Load the PDF
-          const loadingTask = window.pdfjsLib.getDocument({ data: typedArray });
-          const pdf = await loadingTask.promise;
+          const typedArray = new Uint8Array(e.target?.result as ArrayBuffer);
           
-          setPdfDoc(pdf);
-          setTotalPages(pdf.numPages);
-          setCurrentPage(1);
-          setIsFileLoaded(true);
-          
-          // Load the outline/table of contents
+          // Save PDF data to localStorage
           try {
-            const outline = await pdf.getOutline();
-            setOutline(outline);
+            // Convert to base64 for storage
+            let binary = '';
+            const bytes = new Uint8Array(typedArray);
+            const len = bytes.byteLength;
+            
+            for (let i = 0; i < len; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            
+            const base64Data = btoa(binary);
+            
+            // Check size before saving
+            if (base64Data.length < 5000000) { // ~5MB limit
+              localStorage.setItem('pdfMarginNotes_pdfData', base64Data);
+              localStorage.setItem('pdfMarginNotes_lastPdfName', file.name);
+              setLastPdfName(file.name);
+            }
           } catch (err) {
-            console.warn('Could not load PDF outline:', err);
-            setOutline(null);
+            console.warn('Could not save PDF to localStorage:', err);
           }
           
-          // Save PDF name and clear notes only if it's a different PDF
-          const pdfName = file.name;
-          if (pdfName !== lastPdfName) {
-            setNotes([]);
-            setLastPdfName(pdfName);
-            localStorage.setItem('pdfMarginNotes_lastPdfName', pdfName);
-          }
+          await loadPdf(typedArray);
         } catch (err) {
           console.error('Error loading PDF:', err);
-          setError('Error loading PDF. Please try another file.');
+          setError('Error loading PDF. Please try again.');
         }
       };
 
@@ -396,252 +287,212 @@ const PDFMarginNotes: React.FC = () => {
     setScale(1.0);
   };
 
-  // Add note
+  // Handle click on PDF to add a note
   const handlePdfClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!pdfDoc || !pdfContainerRef.current) return;
+    if (!pdfContainerRef.current || !isFileLoaded) return;
     
-    const containerRect = pdfContainerRef.current.getBoundingClientRect();
-    const relativeY = (e.clientY - containerRect.top) / scale;
-    const randomColorIndex = Math.floor(Math.random() * NOTE_COLORS.length);
-    const randomRotationIndex = Math.floor(Math.random() * NOTE_ROTATIONS.length);
+    // First, save any currently edited note
+    const editingNote = notes.find(note => note.isEditing);
+    if (editingNote) {
+      // If the note is empty, delete it
+      if (!editingNote.content.trim()) {
+        deleteNote(editingNote.id);
+      } else {
+        // Otherwise, save it by turning off edit mode
+        setNotes(prevNotes => 
+          prevNotes.map(note => 
+            note.id === editingNote.id 
+              ? { ...note, isEditing: false } 
+              : note
+          )
+        );
+      }
+    }
     
+    // Get click position relative to the container
+    const rect = pdfContainerRef.current.getBoundingClientRect();
+    const yPosition = (e.clientY - rect.top + pdfContainerRef.current.scrollTop) / scale;
+    
+    // Create a unique ID for the new note
+    const noteId = `note-${Date.now()}`;
+    
+    // Create a new note
     const newNote: Note = {
-      id: Date.now().toString(),
+      id: noteId,
       pageNumber: currentPage,
-      yPosition: relativeY,
+      yPosition,
       content: '',
       createdAt: new Date().toISOString(),
-      color: NOTE_COLORS[randomColorIndex],
-      rotation: NOTE_ROTATIONS[randomRotationIndex],
+      color: NOTE_COLORS[Math.floor(Math.random() * NOTE_COLORS.length)],
+      rotation: NOTE_ROTATIONS[Math.floor(Math.random() * NOTE_ROTATIONS.length)],
       isEditing: true
     };
     
+    console.log('Creating new note:', noteId);
+    
+    // Add the new note to the notes array
     setNotes(prevNotes => [...prevNotes, newNote]);
-    setActiveNoteId(newNote.id);
+    
+    // Set the active note ID
+    setActiveNoteId(noteId);
+    
+    // Scroll to the new note in the notes container
+    setTimeout(() => {
+      if (notesContainerRef.current) {
+        notesContainerRef.current.scrollTop = notesContainerRef.current.scrollHeight;
+      }
+    }, 50);
   };
 
   // Update note content
   const updateNoteContent = (id: string, content: string) => {
-    setNotes(prevNotes => 
-      prevNotes.map(note => 
-        note.id === id ? { ...note, content, updatedAt: new Date().toISOString() } : note
-      )
-    );
+    // Log for debugging
+    console.log(`Updating note ${id} with content: ${content}`);
+    
+    setNotes(prevNotes => {
+      // Find the note to update
+      const noteToUpdate = prevNotes.find(note => note.id === id);
+      
+      if (!noteToUpdate) {
+        console.warn(`Note ${id} not found for update`);
+        return prevNotes;
+      }
+      
+      // Update the note
+      return prevNotes.map(note => 
+        note.id === id 
+          ? { 
+              ...note, 
+              content, 
+              updatedAt: new Date().toISOString()
+            } 
+          : note
+      );
+    });
   };
 
-  // Delete note
+  // Delete a note
   const deleteNote = (id: string) => {
     setNotes(prevNotes => prevNotes.filter(note => note.id !== id));
-    if (activeNoteId === id) {
-      setActiveNoteId(null);
-    }
   };
 
-  // Toggle note editing
+  // Toggle note editing state
   const toggleNoteEditing = (id: string) => {
+    // First, save any other currently edited note
+    const editingNote = notes.find(note => note.isEditing && note.id !== id);
+    if (editingNote) {
+      // If the note is empty, delete it
+      if (!editingNote.content.trim()) {
+        deleteNote(editingNote.id);
+      } else {
+        // Otherwise, save it by turning off edit mode
     setNotes(prevNotes => 
       prevNotes.map(note => 
-        note.id === id ? { ...note, isEditing: !note.isEditing } : note
-      )
-    );
+            note.id === editingNote.id 
+              ? { ...note, isEditing: false } 
+              : note
+          )
+        );
+      }
+    }
+    
+    // Now toggle the editing state of the target note
+    setNotes(prevNotes => {
+      const targetNote = prevNotes.find(note => note.id === id);
+      if (!targetNote) return prevNotes;
+      
+      return prevNotes.map(note => 
+        note.id === id 
+          ? { ...note, isEditing: !note.isEditing } 
+          : { ...note, isEditing: false } // Ensure only one note is in editing mode
+      );
+    });
+    
+    // Set this as the active note
     setActiveNoteId(id);
   };
 
-  // Open Anki Export Modal
-  const openAnkiExport = () => {
-    setSelectedNotesForAnki([]);
-    setShowAnkiModal(true);
-    setClozeCounter(1);
-  };
-  
-  // Toggle note selection for Anki export
-  const toggleNoteForAnki = (id: string) => {
-    setSelectedNotesForAnki(prev => {
-      if (prev.includes(id)) {
-        return prev.filter(noteId => noteId !== id);
-      } else {
-        return [...prev, id];
-      }
-    });
-  };
-  
-  // Add cloze deletion to note content
-  const addClozeToNote = (id: string, selectedText: string) => {
-    if (!selectedText) return;
-    
-    setNotes(prevNotes => 
-      prevNotes.map(note => {
-        if (note.id === id) {
-          const content = note.content;
-          const clozeText = `{{c${clozeCounter}::${selectedText}}}`;
-          const newContent = content.replace(selectedText, clozeText);
-          
-          return { 
-            ...note, 
-            content: newContent, 
-            updatedAt: new Date().toISOString(),
-            hasCloze: true
-          };
-        }
-        return note;
-      })
-    );
-    
-    setClozeCounter(prev => prev + 1);
-  };
-  
-  // Render note content with cloze highlighting
-  const renderNoteWithCloze = (content: string) => {
-    if (!content) return <span className="text-stone-400 italic">Empty note</span>;
-    
-    const clozeRegex = /\{\{c(\d+)::([^}]+)\}\}/g;
-    let lastIndex = 0;
-    let parts: React.ReactNode[] = [];
-    let match: RegExpExecArray | null;
-    
-    while ((match = clozeRegex.exec(content)) !== null) {
-      // Add text before cloze
-      if (match.index > lastIndex) {
-        parts.push(<span key={`text-${lastIndex}`}>{content.substring(lastIndex, match.index)}</span>);
-      }
-      
-      // Add cloze
-      const clozeNum = match[1];
-      const clozeContent = match[2];
-      parts.push(
-        <span key={`cloze-${match.index}`} className="anki-cloze">
-          {clozeContent}
-          <span className="anki-cloze-number">{clozeNum}</span>
-        </span>
-      );
-      
-      lastIndex = match.index + match[0].length;
-    }
-    
-    // Add remaining text after last cloze
-    if (lastIndex < content.length) {
-      parts.push(<span key={`text-${lastIndex}`}>{content.substring(lastIndex)}</span>);
-    }
-    
-    return parts.length > 0 ? parts : content;
-  };
-  
-  // Export to Anki
-  const exportToAnki = () => {
+  // Load PDF document
+  const loadPdf = async (pdfData: Uint8Array) => {
     try {
-      if (selectedNotesForAnki.length === 0) {
-        alert('Please select at least one note to export');
-        return;
+      const loadingTask = window.pdfjsLib.getDocument({ data: pdfData });
+      const pdf = await loadingTask.promise;
+      
+      setPdfDoc(pdf);
+      setTotalPages(pdf.numPages);
+      setIsFileLoaded(true);
+      
+      // Try to load the outline/table of contents
+      try {
+        const outline = await pdf.getOutline();
+        setOutline(outline);
+      } catch (err) {
+        console.warn('Could not load PDF outline:', err);
+        setOutline(null);
       }
       
-      const selectedNotes = notes.filter(note => selectedNotesForAnki.includes(note.id));
-      
-      // Create a properly formatted TSV file that Anki can import directly
-      let tsvContent = "#separator:tab\n#html:true\n#deck:PDF Notes\n#notetype:Cloze\n\n";
-      tsvContent += "Text\tExtra\tTags\n";
-      
-      selectedNotes.forEach(note => {
-        // Create extra field with page info
-        const extraField = `Page ${note.pageNumber} - PDF: ${fileInputRef.current?.files?.[0]?.name || 'Untitled PDF'}`;
-        
-        // Create tags (Anki uses space-separated tags)
-        const tags = `pdf-notes page-${note.pageNumber}`;
-        
-        // Add row to TSV (escape tabs and newlines)
-        const escapedContent = note.content.replace(/\t/g, ' ').replace(/\n/g, '<br>');
-        const escapedExtra = extraField.replace(/\t/g, ' ').replace(/\n/g, '<br>');
-        
-        tsvContent += `${escapedContent}\t${escapedExtra}\t${tags}\n`;
-      });
-      
-      // Create the file download with a direct download approach
-      const blob = new Blob([tsvContent], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      
-      // Force download
-      const downloadLink = document.createElement('a');
-      downloadLink.href = url;
-      downloadLink.setAttribute('download', `anki-export-${new Date().toISOString().split('T')[0]}.txt`);
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-      
-      URL.revokeObjectURL(url);
-      
-      setShowAnkiModal(false);
-      
-      // Show success message
-      alert('Notes exported for Anki!\n\nImport instructions:\n1. In Anki, click File > Import\n2. Select the downloaded .txt file\n3. Make sure "Fields separated by: Tab" is selected\n4. Confirm import settings');
+      // Reset to page 1 when loading a new document
+      setCurrentPage(1);
     } catch (err) {
-      console.error('Error exporting to Anki:', err);
-      setError('Error creating Anki export. Please try again.');
+      console.error('Error loading PDF:', err);
+      setError('Error loading PDF. Please try again.');
     }
   };
 
-  // Filter notes for current page
-  const currentPageNotes = notes.filter(note => note.pageNumber === currentPage);
-  
-  // Effect for rendering the PDF page
+  // Effect to render page when current page or scale changes
   useEffect(() => {
-    if (pdfDoc) {
       renderPage();
-    }
-  }, [pdfDoc, currentPage, scale, renderPage]);
+  }, [renderPage, currentPage, scale]);
   
-  // Add keyboard shortcut for toggling outline (Alt+O)
+  // Save current page and scale to localStorage
+  useEffect(() => {
+    if (isFileLoaded) {
+    localStorage.setItem('pdfMarginNotes_currentPage', currentPage.toString());
+    localStorage.setItem('pdfMarginNotes_scale', scale.toString());
+    }
+  }, [currentPage, scale, isFileLoaded]);
+  
+  // Save notes to localStorage
+  useEffect(() => {
+    localStorage.setItem('pdfMarginNotes_notes', JSON.stringify(notes));
+  }, [notes]);
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && e.key === 'o') {
+      // Only handle shortcuts when not in an input or textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      
+      // Navigation shortcuts
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        goToPrevPage();
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        goToNextPage();
+      }
+      
+      // Zoom shortcuts
+      if (e.key === '+' || e.key === '=') {
+        zoomIn();
+      } else if (e.key === '-') {
+        zoomOut();
+      } else if (e.key === '0') {
+        resetZoom();
+      }
+      
+      // Toggle outline with Alt+O
+      if (e.key === 'o' && e.altKey) {
         setShowOutline(prev => !prev);
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
+    
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
-  
-  // Save state to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem('pdfMarginNotes_currentPage', currentPage.toString());
-  }, [currentPage]);
-  
-  useEffect(() => {
-    localStorage.setItem('pdfMarginNotes_scale', scale.toString());
-  }, [scale]);
-  
-  useEffect(() => {
-    localStorage.setItem('pdfMarginNotes_notes', JSON.stringify(notes));
-  }, [notes]);
-
-  // Export notes to JSON
-  const exportNotes = () => {
-    try {
-      const exportData = {
-        title: fileInputRef.current?.files?.[0]?.name || 'Untitled PDF',
-        exportedAt: new Date().toISOString(),
-        notes: notes.map(({ id, pageNumber, content, createdAt, updatedAt }) => ({
-          id, pageNumber, content, createdAt, updatedAt
-        }))
-      };
-      
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `notes-export-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      
-      URL.revokeObjectURL(url);
-      
-      alert('Notes exported successfully!');
-    } catch (err) {
-      console.error('Error exporting notes:', err);
-      setError('Error exporting notes. Please try again.');
-    }
-  };
   
   // Navigate to a specific destination in the PDF
   const navigateToDestination = async (dest: string | any[]) => {
@@ -701,91 +552,91 @@ const PDFMarginNotes: React.FC = () => {
     }
   };
   
-  // Recursive component to render outline items
-  const OutlineItem = ({ item, level = 0 }: { item: PDFOutlineItem; level?: number }) => {
-    const handleClick = (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      if (item.dest) {
-        navigateToDestination(item.dest);
-      } else if (item.url) {
-        window.open(item.url, item.newWindow ? '_blank' : '_self');
-      }
-    };
-    
-    return (
-      <div className="outline-item">
-        <div 
-          className={`flex items-center py-1 px-2 hover:bg-stone-100 rounded cursor-pointer text-sm ${level > 0 ? 'ml-' + (level * 3) : ''}`}
-          onClick={handleClick}
-        >
-          <span className={`${item.bold ? 'font-bold' : ''} ${item.italic ? 'italic' : ''} truncate`}>
-            {item.title}
-          </span>
-        </div>
-        
-        {item.items && item.items.length > 0 && (
-          <div className="outline-children">
-            {item.items.map((child, index) => (
-              <OutlineItem key={index} item={child} level={level + 1} />
-            ))}
-          </div>
-        )}
-      </div>
+  // Add cloze deletion to a note
+  const addClozeToNote = (id: string, selectedText: string) => {
+    setNotes(prevNotes => 
+      prevNotes.map(note => {
+        if (note.id === id) {
+          const clozeText = `{{c${clozeCounter}::${selectedText}}}`;
+          const newContent = note.content.replace(selectedText, clozeText);
+          
+          setClozeCounter(prev => prev + 1);
+          
+          return { 
+            ...note, 
+            content: newContent, 
+            updatedAt: new Date().toISOString(),
+            hasCloze: true
+          };
+        }
+        return note;
+      })
     );
   };
-  
-  // Import notes from JSON
-  const importNotes = (event: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const file = event.target.files?.[0];
-      if (!file) return;
+
+  // Render note content with cloze formatting
+  const renderNoteWithCloze = (content: string) => {
+    if (!content) return <span className="text-stone-400 italic">Empty note</span>;
+    
+    const clozeRegex = /\{\{c(\d+)::([^}]+)\}\}/g;
+    let lastIndex = 0;
+    let parts: React.ReactNode[] = [];
+    let match: RegExpExecArray | null;
+    
+    while ((match = clozeRegex.exec(content)) !== null) {
+      // Add text before cloze
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${lastIndex}`}>{content.substring(lastIndex, match.index)}</span>);
+      }
       
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const content = e.target?.result as string;
-          const importedData = JSON.parse(content);
-          
-          if (Array.isArray(importedData.notes)) {
-            // Convert imported notes to our Note format
-            const importedNotes: Note[] = importedData.notes.map((note: any) => ({
-              ...note,
-              color: NOTE_COLORS[Math.floor(Math.random() * NOTE_COLORS.length)],
-              rotation: NOTE_ROTATIONS[Math.floor(Math.random() * NOTE_ROTATIONS.length)],
-              isEditing: false
-            }));
-            
-            setNotes(prev => [...prev, ...importedNotes]);
-            alert(`Successfully imported ${importedNotes.length} notes!`);
-          } else {
-            throw new Error('Invalid notes format');
-          }
-        } catch (err) {
-          console.error('Error parsing imported notes:', err);
-          setError('The selected file does not contain valid notes data.');
-        }
-      };
+      // Add cloze
+      const clozeNum = match[1];
+      const clozeContent = match[2];
+      parts.push(
+        <span key={`cloze-${match.index}`} className="anki-cloze">
+          {clozeContent}
+          <span className="anki-cloze-number">{clozeNum}</span>
+        </span>
+      );
       
-      reader.readAsText(file);
-    } catch (err) {
-      console.error('Error importing notes:', err);
-      setError('Error importing notes. Please try again.');
+      lastIndex = match.index + match[0].length;
     }
+    
+    // Add remaining text after last cloze
+    if (lastIndex < content.length) {
+      parts.push(<span key={`text-${lastIndex}`}>{content.substring(lastIndex)}</span>);
+    }
+    
+    return parts.length > 0 ? parts : content;
   };
+  
+  // Handle imported notes
+  const handleImportNotes = (importedNotes: Note[]) => {
+            setNotes(prev => [...prev, ...importedNotes]);
+  };
+
+  // Effect to focus the active note
+  useEffect(() => {
+    if (activeNoteId) {
+      // Find the note element and focus it
+      setTimeout(() => {
+        const noteElement = document.getElementById(`note-${activeNoteId}`);
+        if (noteElement) {
+          const textarea = noteElement.querySelector('textarea');
+          if (textarea) {
+            textarea.focus();
+          }
+        }
+      }, 100);
+    }
+  }, [activeNoteId]);
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-stone-50 font-serif relative">
       {/* Grain overlay */}
       <div className="absolute inset-0 pointer-events-none bg-grain opacity-10 z-10"></div>
       
-      {/* Header/Controls */}
-      <div className="px-4 py-3 bg-stone-100 border-b border-stone-200 flex items-center justify-between relative z-20">
-        <div className="flex items-center space-x-4">
-          <h1 className="text-xl font-medium text-stone-800">PDF Margin Notes</h1>
-          
-          <div className="flex space-x-2">
+      {/* File input for PDF upload */}
             <input
               type="file"
               ref={fileInputRef}
@@ -793,142 +644,38 @@ const PDFMarginNotes: React.FC = () => {
               accept="application/pdf"
               className="hidden"
             />
-            <button
-              onClick={handleOpenClick}
-              className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-md border border-amber-300 text-sm font-medium transition-colors"
-            >
-              Open PDF
-            </button>
-            {notes.length > 0 && (
-              <>
-                <button
-                  onClick={exportNotes}
-                  className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-md border border-stone-300 text-sm font-medium transition-colors"
-                >
-                  Export Notes
-                </button>
-                <input
-                  type="file"
-                  ref={importNotesRef}
-                  onChange={importNotes}
-                  accept="application/json"
-                  className="hidden"
-                />
-                <button
-                  onClick={() => importNotesRef.current?.click()}
-                  className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-md border border-stone-300 text-sm font-medium transition-colors"
-                >
-                  Import Notes
-                </button>
-                <button
-                  onClick={clearAllData}
-                  className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-md border border-rose-300 text-sm font-medium transition-colors"
-                >
-                  Clear Data
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-        
-        {isFileLoaded && (
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-1 bg-stone-200 rounded-md px-1">
-              <button
-                onClick={zoomOut}
-                className="p-1 text-stone-600 hover:text-stone-900"
-                aria-label="Zoom out"
-              >
-                -
-              </button>
-              <button
-                onClick={resetZoom}
-                className="px-2 py-1 text-xs text-stone-600 hover:text-stone-900"
-              >
-                {Math.round(scale * 100)}%
-              </button>
-              <button
-                onClick={zoomIn}
-                className="p-1 text-stone-600 hover:text-stone-900"
-                aria-label="Zoom in"
-              >
-                +
-              </button>
-            </div>
-            
-            <div className="flex items-center space-x-1 bg-stone-200 rounded-md">
-              <button
-                onClick={goToPrevPage}
-                disabled={currentPage <= 1}
-                className="px-2 py-1 text-stone-600 hover:text-stone-900 disabled:text-stone-400"
-                aria-label="Previous page"
-              >
-                ←
-              </button>
-              <span className="px-2 py-1 text-xs text-stone-600">
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                onClick={goToNextPage}
-                disabled={currentPage >= totalPages}
-                className="px-2 py-1 text-stone-600 hover:text-stone-900 disabled:text-stone-400"
-                aria-label="Next page"
-              >
-                →
-              </button>
-            </div>
-            
-            <button
-              onClick={() => setShowOutline(!showOutline)}
-              className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-md border border-stone-300 text-sm font-medium transition-colors relative group"
-              title="Toggle Table of Contents (Alt+O)"
-            >
-              {showOutline ? 'Hide Outline' : 'Show Outline'}
-              <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-1 bg-stone-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                Alt+O
-              </span>
-            </button>
-            
-            <button
-              onClick={openAnkiExport}
-              className="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md border border-blue-300 text-sm font-medium transition-colors"
-            >
-              Anki Export
-            </button>
-          </div>
-        )}
-      </div>
+      
+      {/* Header/Controls */}
+      <Header
+        isFileLoaded={isFileLoaded}
+        notes={notes}
+        handleOpenClick={handleOpenClick}
+        handleImportNotes={handleImportNotes}
+        clearAllData={clearAllData}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        zoomIn={zoomIn}
+        zoomOut={zoomOut}
+        resetZoom={resetZoom}
+        goToPrevPage={goToPrevPage}
+        goToNextPage={goToNextPage}
+        scale={scale}
+        showOutline={showOutline}
+        setShowOutline={setShowOutline}
+        setCurrentPage={setCurrentPage}
+      />
       
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Table of Contents / Outline Panel */}
-        {showOutline && isFileLoaded && (
-          <div className="w-64 bg-stone-50 border-r border-stone-200 overflow-y-auto flex flex-col flex-shrink-0">
-            <div className="px-4 py-3 border-b border-stone-200 flex justify-between items-center">
-              <h2 className="font-medium text-stone-800">Table of Contents</h2>
-              <button 
-                onClick={() => setShowOutline(false)}
-                className="text-stone-500 hover:text-stone-800 text-sm"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-2">
-              {outline && outline.length > 0 ? (
-                <div className="space-y-1">
-                  {outline.map((item, index) => (
-                    <OutlineItem key={index} item={item} />
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center text-stone-400 text-sm py-4">
-                  No table of contents available
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <OutlinePanel
+          showOutline={showOutline}
+          isFileLoaded={isFileLoaded}
+          outline={outline}
+          setShowOutline={setShowOutline}
+          navigateToDestination={navigateToDestination}
+        />
+        
         {/* PDF Container with Margin */}
         <div className="flex-1 flex bg-stone-200 relative">
           {!isFileLoaded ? (
@@ -940,237 +687,52 @@ const PDFMarginNotes: React.FC = () => {
               <p className="text-stone-500 max-w-md">
                 Click the "Open PDF" button to upload a local PDF file and start taking margin notes.
               </p>
-              {error && (
-                <p className="text-rose-600 bg-rose-50 p-3 rounded-md border border-rose-200">
-                  {error}
-                </p>
-              )}
+              <ErrorDisplay error={error} />
             </div>
           ) : (
             <>
               <div className="flex flex-1">
-                {/* PDF Viewer - Now with proper flex layout */}
-                <div className="flex-1 min-w-0 relative">
-                  <div 
-                    ref={pdfContainerRef} 
-                    className="absolute inset-0 overflow-auto cursor-text bg-stone-100"
-                    onClick={handlePdfClick}
-                  >
-                    <div className="p-4 flex justify-center">
-                      <div className="relative">
-                        <div className="absolute inset-0 pointer-events-none bg-grain opacity-5 z-10 rounded"></div>
-                        <div className="relative bg-white p-2 shadow-md rounded inline-block"> {/* Changed to inline-block */}
-                          {pdfDoc ? (
-                            <canvas ref={canvasRef} />
-                          ) : (
-                            <div className="flex items-center justify-center" style={{ height: "500px", width: "400px" }}>
-                              <div className="text-center text-stone-400">
-                                <p className="text-2xl font-medium mb-2">Demo Mode</p>
-                                <p className="text-lg">Page {currentPage} of {totalPages}</p>
-                                <p className="mt-6 text-sm">Click anywhere to add a note</p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* PDF Viewer */}
+                <PDFViewer
+                  pdfDoc={pdfDoc}
+                  currentPage={currentPage}
+                  canvasRef={canvasRef}
+                  pdfContainerRef={pdfContainerRef}
+                  handlePdfClick={handlePdfClick}
+                  isFileLoaded={isFileLoaded}
+                  totalPages={totalPages}
+                />
                 
                 {/* Current Page Notes Container */}
-                <div 
-                  ref={notesContainerRef}
-                  className="w-64 bg-stone-50 border-l border-stone-200 flex flex-col h-full overflow-hidden relative flex-shrink-0 z-20"
-                >
-                  <div className="absolute inset-0 pointer-events-none bg-grain opacity-8 z-10"></div>
-                  <div className="px-3 py-2 bg-stone-100 border-b border-stone-200">
-                    <h3 className="text-sm font-medium text-stone-700">Notes - Page {currentPage}</h3>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                    {currentPageNotes.map(note => (
-                      <div 
-                        key={note.id}
-                        className={`p-3 border rounded-md shadow-sm ${note.color} ${note.rotation} transition-all`}
-                        style={{ overflow: 'hidden' }}
-                      >
-                        {note.isEditing ? (
-                          <textarea
-                            value={note.content}
-                            onChange={(e) => updateNoteContent(note.id, e.target.value)}
-                            autoFocus
-                            className="w-full bg-transparent outline-none border-0 focus:ring-0 focus:border-0 focus:outline-none min-h-24 resize-none font-serif text-sm appearance-none"
-                            placeholder="Write your note here..."
-                            onBlur={() => toggleNoteEditing(note.id)}
-                          />
-                        ) : (
-                          <>
-                            <div 
-                              className="min-h-16 text-sm whitespace-pre-wrap mb-2"
-                              onClick={() => toggleNoteEditing(note.id)}
-                            >
-                              {renderNoteWithCloze(note.content)}
-                            </div>
-                            <div className="flex items-center justify-between text-xs text-stone-500">
-                              <span>Page {note.pageNumber}</span>
-                              <button 
-                                onClick={() => deleteNote(note.id)}
-                                className="text-rose-600 hover:text-rose-800"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                    
-                    {currentPageNotes.length === 0 && (
-                      <div className="flex flex-col items-center justify-center h-32 text-stone-400 text-sm text-center">
-                        <p>No notes on this page</p>
-                        <p className="mt-2">Click on the PDF to add a note</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <NotesList
+                  notes={notes}
+                  currentPage={currentPage}
+                  updateNoteContent={updateNoteContent}
+                  toggleNoteEditing={toggleNoteEditing}
+                  deleteNote={deleteNote}
+                  renderNoteWithCloze={renderNoteWithCloze}
+                  notesContainerRef={notesContainerRef}
+                  activeNoteId={activeNoteId}
+                  addClozeToNote={addClozeToNote}
+                />
               </div>
             </>
           )}
         </div>
         
         {/* All Notes Sidebar */}
-        <div className="w-64 bg-stone-50 border-l border-stone-200 overflow-y-auto flex-shrink-0 z-20">
-          <div className="px-4 py-3 border-b border-stone-200">
-            <h2 className="font-medium text-stone-800">All Notes</h2>
-          </div>
-          
-          <div className="p-3 space-y-3">
-            {notes.length > 0 ? notes.map(note => (
-              <div 
-                key={note.id}
-                className={`p-3 border rounded-md shadow-sm ${note.pageNumber === currentPage ? note.color : 'bg-white border-stone-200'} ${note.rotation} transition-all`}
-                style={{ overflow: 'hidden' }}
-                onClick={() => {
-                  setCurrentPage(note.pageNumber);
-                  setActiveNoteId(note.id);
-                }}
-              >
-                <div className="min-h-12 text-sm whitespace-pre-wrap mb-2 line-clamp-3">
-                  {renderNoteWithCloze(note.content)}
-                </div>
-                <div className="flex items-center justify-between text-xs text-stone-500">
-                  <span>Page {note.pageNumber}</span>
-                  <span>{new Date(note.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                </div>
-              </div>
-            )) : (
-              <div className="text-center text-stone-400 text-sm py-4">
-                No notes yet
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {/* Anki Export Modal */}
-      {showAnkiModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full min-h-[500px] h-[70vh] flex flex-col overflow-hidden gap-4">
-            <div className="px-6 py-4 border-b border-stone-200 flex justify-between items-center">
-              <h2 className="text-xl font-medium text-stone-800">Export Notes to Anki</h2>
-              <button 
-                onClick={() => setShowAnkiModal(false)}
-                className="text-stone-500 hover:text-stone-800"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 min-h-[300px]">
-              <div className="mb-4">
-                <p className="text-stone-600 mb-2">Select notes to export and create cloze deletions:</p>
-                <ol className="list-decimal list-inside text-sm text-stone-500 mb-4 pl-2">
-                  <li className="mb-1">Select text within a note to create a cloze deletion</li>
-                  <li className="mb-1">Click on "Make Cloze" to mark the selection</li>
-                  <li className="mb-1">Review your notes and select which ones to export</li>
-                  <li className="mb-1">Click "Export to Anki" to generate a text file for import</li>
-                </ol>
-              </div>
-              
-              <div className="space-y-4">
-                {notes.map(note => {
-                  const isSelected = selectedNotesForAnki.includes(note.id);
-                  
-                  return (
-                    <div 
-                      key={note.id}
-                      className={`p-4 border rounded-md ${isSelected ? 'border-blue-400 bg-blue-50' : 'border-stone-200'} transition-all`}
-                    >
-                      <div className="flex items-start mb-2">
-                        <input 
-                          type="checkbox" 
-                          checked={isSelected}
-                          onChange={() => toggleNoteForAnki(note.id)}
-                          className="mr-3 mt-1"
-                        />
-                        <div className="flex-1">
-                          <div className="text-xs text-stone-500 mb-1">
-                            Page {note.pageNumber} | Created: {new Date(note.createdAt).toLocaleString()}
+        <AllNotesSidebar
+          notes={notes}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          setActiveNoteId={setActiveNoteId}
+          renderNoteWithCloze={renderNoteWithCloze}
+          toggleNoteEditing={toggleNoteEditing}
+          updateNoteContent={updateNoteContent}
+          deleteNote={deleteNote}
+          addClozeToNote={addClozeToNote}
+        />
                           </div>
-                          
-                          <div 
-                            className="relative min-h-16 p-2 bg-white border border-stone-200 rounded-md mb-2"
-                            onClick={() => setActiveNoteId(note.id)}
-                          >
-                            {renderNoteWithCloze(note.content)}
-                          </div>
-                          
-                          <div className="flex justify-end space-x-2">
-                            <button
-                              onClick={() => {
-                                const selection = window.getSelection();
-                                if (selection && selection.toString() && activeNoteId === note.id) {
-                                  addClozeToNote(note.id, selection.toString());
-                                } else {
-                                  alert('Please select some text first');
-                                }
-                              }}
-                              className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs font-medium"
-                            >
-                              Make Cloze
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            
-            <div className="px-6 py-4 border-t border-stone-200 flex justify-between items-center bg-stone-50">
-              <div className="text-sm text-stone-600">
-                Selected {selectedNotesForAnki.length} of {notes.length} notes
-              </div>
-              <div className="flex space-x-2">
-                <button 
-                  onClick={() => setShowAnkiModal(false)}
-                  className="px-3 py-1.5 bg-stone-100 text-stone-800 rounded-md border border-stone-300 text-sm"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={exportToAnki}
-                  className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium"
-                  disabled={selectedNotesForAnki.length === 0}
-                >
-                  Export to Anki
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
