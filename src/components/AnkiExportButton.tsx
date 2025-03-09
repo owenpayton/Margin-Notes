@@ -33,44 +33,36 @@ const AnkiExportButton: React.FC<AnkiExportButtonProps> = ({ notes, className })
         return;
       }
       
-      const ankiNotes = selectedNotes.map(note => {
-        // For notes with cloze deletions
-        if (note.content.includes('{{c')) {
-          return {
-            noteType: 'Cloze',
-            fields: {
-              Text: note.content,
-              'Back Extra': `Source: Page ${note.pageNumber}`
-            },
-            tags: ['pdf-margin-notes']
-          };
-        }
+      // Create a tab-delimited text file that Anki can import
+      let ankiText = "";
+      
+      // Add header line for Anki import (optional but helpful)
+      // For cloze cards: Text and Back Extra fields
+      ankiText += "Text\tBack Extra\tTags\n";
+      
+      selectedNotes.forEach(note => {
+        // Prepare the note content - already has {{c1::text}} format
+        const text = note.content;
+        const backExtra = `Source: Page ${note.pageNumber}`;
+        const tags = "pdf-margin-notes";
         
-        // For regular notes
-        return {
-          noteType: 'Basic',
-          fields: {
-            Front: `Page ${note.pageNumber} Note`,
-            Back: note.content
-          },
-          tags: ['pdf-margin-notes']
-        };
+        // Add tab-delimited line
+        ankiText += `${text}\t${backExtra}\t${tags}\n`;
       });
       
-      const ankiExport = {
-        notes: ankiNotes
-      };
+      // Create and download the file as .txt
+      const blob = new Blob([ankiText], { type: "text/plain" });
+      const dataUri = URL.createObjectURL(blob);
       
-      // Create and download the file
-      const dataStr = JSON.stringify(ankiExport, null, 2);
-      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-      
-      const exportFileName = `anki-export-${new Date().toISOString().slice(0, 10)}.json`;
+      const exportFileName = `anki-export-${new Date().toISOString().slice(0, 10)}.txt`;
       
       const linkElement = document.createElement('a');
       linkElement.setAttribute('href', dataUri);
       linkElement.setAttribute('download', exportFileName);
       linkElement.click();
+      
+      // Clean up
+      URL.revokeObjectURL(dataUri);
       
       setShowAnkiModal(false);
       alert(`Successfully exported ${selectedNotes.length} notes for Anki!`);
