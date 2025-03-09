@@ -16,6 +16,7 @@ export interface PDFDocumentProxy {
   getPage: (pageNumber: number) => Promise<PDFPageProxy>;
   getOutline: () => Promise<PDFOutlineItem[] | null>;
   getDestination?: (dest: string) => Promise<any[] | null>;
+  getPageIndex?: (ref: any) => Promise<number>;
 }
 
 export interface PDFOutlineItem {

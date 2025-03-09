@@ -426,7 +426,32 @@ const PDFMarginNotes: React.FC = () => {
       // Try to load the outline/table of contents
       try {
         const outline = await pdf.getOutline();
-        setOutline(outline);
+        console.log('PDF outline loaded:', outline);
+        
+        // Validate outline structure
+        if (outline && Array.isArray(outline)) {
+          // Process outline to ensure all items have required properties
+          const processOutlineItems = (items: PDFOutlineItem[]): PDFOutlineItem[] => {
+            return items.map(item => {
+              // Ensure title exists
+              if (!item.title) {
+                item.title = 'Untitled';
+              }
+              
+              // Process nested items if they exist
+              if (item.items && Array.isArray(item.items)) {
+                item.items = processOutlineItems(item.items);
+              }
+              
+              return item;
+            });
+          };
+          
+          setOutline(processOutlineItems(outline));
+        } else {
+          console.warn('PDF outline is not in expected format:', outline);
+          setOutline(null);
+        }
       } catch (err) {
         console.warn('Could not load PDF outline:', err);
         setOutline(null);
@@ -504,48 +529,82 @@ const PDFMarginNotes: React.FC = () => {
     
     try {
       let pageNumber: number | undefined;
+      
       console.log('Navigating to destination:', dest);
       
-      if (Array.isArray(dest)) {
-        // Handle array destination format
-        const ref = dest[0]; // First element is usually the page reference
-        
-        if (ref && typeof ref === 'object' && 'num' in ref) {
-          // Convert from PDF reference to page number (usually 0-indexed)
-          pageNumber = ref.num + 1;
-          console.log('Array destination resolved to page:', pageNumber);
-        } else {
-          console.warn('Could not extract page number from array destination:', dest);
-        }
-      } else if (typeof dest === 'string') {
+      // Handle different destination formats using PDF.js's proper methods
+      if (typeof dest === 'string') {
         // Handle named destination
         try {
           if (pdfDoc.getDestination) {
-            const namedDest = await pdfDoc.getDestination(dest);
-            console.log('Named destination resolved to:', namedDest);
-            
-            if (namedDest && namedDest.length > 0) {
-              const ref = namedDest[0];
-              if (ref && typeof ref === 'object' && 'num' in ref) {
-                pageNumber = ref.num + 1;
-                console.log('Named destination resolved to page:', pageNumber);
+            // Get the explicit destination array
+            const explicitDest = await pdfDoc.getDestination(dest);
+            if (explicitDest && Array.isArray(explicitDest) && explicitDest.length > 0) {
+              // Get the reference to the page
+              const ref = explicitDest[0];
+              
+              // Use getPageIndex to convert ref to page index (0-based)
+              if (pdfDoc.getPageIndex) {
+                const pageIndex = await pdfDoc.getPageIndex(ref);
+                // Convert to 1-based page number
+                pageNumber = pageIndex + 1;
               }
-            } else {
-              console.warn('Named destination returned empty result:', dest);
             }
-          } else {
-            console.warn('PDF document does not support getDestination method');
           }
         } catch (err) {
-          console.error('Error getting named destination:', err);
+          console.error('Error resolving named destination:', err);
         }
-      } else {
-        console.warn('Unsupported destination format:', dest);
+      } else if (Array.isArray(dest) && dest.length > 0) {
+        // Direct array destination - first element is the page reference
+        const ref = dest[0];
+        
+        if (ref && typeof ref === 'object') {
+          try {
+            // Use getPageIndex to convert ref to page index (0-based)
+            if (pdfDoc.getPageIndex) {
+              const pageIndex = await pdfDoc.getPageIndex(ref);
+              // Convert to 1-based page number
+              pageNumber = pageIndex + 1;
+            }
+          } catch (err) {
+            console.error('Error getting page index from reference:', err);
+            
+            // Fallback: try to use the num property if available
+            if ('num' in ref) {
+              // PDF.js internal page numbers are 0-based, add 1 for display
+              pageNumber = ref.num + 1;
+            }
+          }
+        }
       }
       
+      // Navigate to the page if we have a valid page number
       if (pageNumber !== undefined && pageNumber >= 1 && pageNumber <= totalPages) {
         console.log('Navigating to page:', pageNumber);
-        setCurrentPage(pageNumber);
+        
+        // Force a re-render by setting to a different value first if we're already on this page
+        if (pageNumber === currentPage) {
+          // This is a workaround for when clicking on TOC items for the current page
+          // Set to a temporary value and then back to force a re-render
+          setCurrentPage(prev => {
+            const tempPage = prev > 1 ? prev - 1 : prev + 1;
+            // Store pageNumber in a local constant to ensure it's not undefined
+            const targetPage = pageNumber;
+            setTimeout(() => {
+              if (targetPage !== undefined) {
+                setCurrentPage(targetPage);
+              }
+            }, 50);
+            return tempPage;
+          });
+        } else {
+          setCurrentPage(pageNumber);
+        }
+        
+        // Scroll to top of page when navigating via outline
+        if (pdfContainerRef.current) {
+          pdfContainerRef.current.scrollTop = 0;
+        }
       } else {
         console.warn('Invalid page number or out of range:', pageNumber, 'total pages:', totalPages);
       }
@@ -721,6 +780,7 @@ const PDFMarginNotes: React.FC = () => {
           outline={outline}
           setShowOutline={setShowOutline}
           navigateToDestination={navigateToDestination}
+          pdfDoc={pdfDoc}
         />
         
         {/* PDF Container with Margin */}
