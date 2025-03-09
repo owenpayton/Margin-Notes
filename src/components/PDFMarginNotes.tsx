@@ -836,6 +836,10 @@ const PDFMarginNotes: React.FC = () => {
                   handlePdfClick={handlePdfClick}
                   isFileLoaded={isFileLoaded}
                   totalPages={totalPages}
+                  notes={notes}
+                  scale={scale}
+                  activeNoteId={activeNoteId}
+                  setActiveNoteId={setActiveNoteId}
                 />
                 
                 {/* Current Page Notes Container */}
