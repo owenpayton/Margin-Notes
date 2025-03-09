@@ -126,45 +126,46 @@ const PDFMarginNotes: React.FC = () => {
     };
   }, []);
   
-  // Load PDF.js
+  // Load PDF.js library
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    const script = document.createElement('script');
-    script.src = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.min.js`;
-    script.async = true;
-    
-    script.onload = () => {
-      // Set worker source
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
-        `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.js`;
-      
-      setIsPdfLibReady(true);
-      
-      // Try to load the last PDF if available
-      const savedPdfData = localStorage.getItem('pdfMarginNotes_pdfData');
-      if (savedPdfData && lastPdfName) {
-        try {
-          const binaryData = atob(savedPdfData);
-          const len = binaryData.length;
-          const bytes = new Uint8Array(len);
-          
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binaryData.charCodeAt(i);
-          }
-          
-          loadPdf(bytes);
-          } catch (err) {
-          console.error('Error loading saved PDF:', err);
+    const loadPdfLib = async () => {
+      try {
+        // Check if PDF.js is already loaded
+        if (window.pdfjsLib) {
+          console.log('PDF.js library already loaded');
+          setIsPdfLibReady(true);
+          return;
         }
+
+        console.log('Loading PDF.js library...');
+        
+        // Load PDF.js script
+        const script = document.createElement('script');
+        script.src = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.min.js`;
+        script.async = true;
+        
+        script.onload = () => {
+          // Set worker source after the library is loaded
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+            `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.js`;
+          
+          console.log('PDF.js library loaded successfully');
+          setIsPdfLibReady(true);
+        };
+        
+        script.onerror = (error) => {
+          console.error('Error loading PDF.js library:', error);
+          setError('Failed to load PDF viewer library. Please refresh the page and try again.');
+        };
+        
+        document.body.appendChild(script);
+      } catch (err) {
+        console.error('Error in PDF.js initialization:', err);
+        setError('Failed to initialize PDF viewer. Please refresh the page and try again.');
       }
     };
     
-    document.body.appendChild(script);
-    
-    return () => {
-      document.body.removeChild(script);
-    };
+    loadPdfLib();
   }, []);
 
   // Handle file upload
@@ -496,10 +497,14 @@ const PDFMarginNotes: React.FC = () => {
   
   // Navigate to a specific destination in the PDF
   const navigateToDestination = async (dest: string | any[]) => {
-    if (!pdfDoc) return;
+    if (!pdfDoc) {
+      console.error('Cannot navigate: PDF document not loaded');
+      return;
+    }
     
     try {
-      let pageNumber;
+      let pageNumber: number | undefined;
+      console.log('Navigating to destination:', dest);
       
       if (Array.isArray(dest)) {
         // Handle array destination format
@@ -508,24 +513,41 @@ const PDFMarginNotes: React.FC = () => {
         if (ref && typeof ref === 'object' && 'num' in ref) {
           // Convert from PDF reference to page number (usually 0-indexed)
           pageNumber = ref.num + 1;
+          console.log('Array destination resolved to page:', pageNumber);
+        } else {
+          console.warn('Could not extract page number from array destination:', dest);
         }
-      } else if (typeof dest === 'string' && pdfDoc.getDestination) {
-        // Handle named destination if the method exists
+      } else if (typeof dest === 'string') {
+        // Handle named destination
         try {
-          const namedDest = await pdfDoc.getDestination(dest);
-          if (namedDest && namedDest.length > 0) {
-            const ref = namedDest[0];
-            if (ref && typeof ref === 'object' && 'num' in ref) {
-              pageNumber = ref.num + 1;
+          if (pdfDoc.getDestination) {
+            const namedDest = await pdfDoc.getDestination(dest);
+            console.log('Named destination resolved to:', namedDest);
+            
+            if (namedDest && namedDest.length > 0) {
+              const ref = namedDest[0];
+              if (ref && typeof ref === 'object' && 'num' in ref) {
+                pageNumber = ref.num + 1;
+                console.log('Named destination resolved to page:', pageNumber);
+              }
+            } else {
+              console.warn('Named destination returned empty result:', dest);
             }
+          } else {
+            console.warn('PDF document does not support getDestination method');
           }
         } catch (err) {
-          console.warn('Error getting destination:', err);
+          console.error('Error getting named destination:', err);
         }
+      } else {
+        console.warn('Unsupported destination format:', dest);
       }
       
-      if (pageNumber && pageNumber >= 1 && pageNumber <= totalPages) {
+      if (pageNumber !== undefined && pageNumber >= 1 && pageNumber <= totalPages) {
+        console.log('Navigating to page:', pageNumber);
         setCurrentPage(pageNumber);
+      } else {
+        console.warn('Invalid page number or out of range:', pageNumber, 'total pages:', totalPages);
       }
     } catch (err) {
       console.error('Error navigating to destination:', err);
@@ -630,6 +652,31 @@ const PDFMarginNotes: React.FC = () => {
       }, 100);
     }
   }, [activeNoteId]);
+
+  // Load saved PDF when PDF.js is ready
+  useEffect(() => {
+    if (!isPdfLibReady) return;
+    
+    // Try to load the last PDF if available
+    const savedPdfData = localStorage.getItem('pdfMarginNotes_pdfData');
+    if (savedPdfData && lastPdfName) {
+      try {
+        console.log('Loading saved PDF:', lastPdfName);
+        const binaryData = atob(savedPdfData);
+        const len = binaryData.length;
+        const bytes = new Uint8Array(len);
+        
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryData.charCodeAt(i);
+        }
+        
+        loadPdf(bytes);
+      } catch (err) {
+        console.error('Error loading saved PDF:', err);
+        setError('Error loading saved PDF. Please try uploading it again.');
+      }
+    }
+  }, [isPdfLibReady, lastPdfName]);
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-stone-50 font-serif relative">

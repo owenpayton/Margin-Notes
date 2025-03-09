@@ -19,6 +19,8 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
 }) => {
   if (!showOutline || !isFileLoaded) return null;
 
+  const hasOutline = outline && outline.length > 0;
+
   return (
     <div className="w-64 bg-stone-50 border-r border-stone-200 overflow-y-auto flex flex-col flex-shrink-0">
       <div className="px-4 py-3 border-b border-stone-200 flex justify-between items-center">
@@ -26,16 +28,17 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
         <button 
           onClick={() => setShowOutline(false)}
           className="text-stone-500 hover:text-stone-800 text-sm"
+          aria-label="Close table of contents"
         >
           ✕
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-2">
-        {outline && outline.length > 0 ? (
+        {hasOutline ? (
           <div className="space-y-1">
             {outline.map((item, index) => (
               <OutlineItem 
-                key={index} 
+                key={`outline-item-${index}`}
                 item={item} 
                 navigateToDestination={navigateToDestination}
               />
@@ -43,7 +46,9 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
           </div>
         ) : (
           <div className="text-center text-stone-400 text-sm py-4">
-            No table of contents available
+            {outline === null ? 
+              "Error loading table of contents" : 
+              "No table of contents available"}
           </div>
         )}
       </div>
