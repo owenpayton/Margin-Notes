@@ -33,7 +33,7 @@ export interface PDFOutlineItem {
 }
 
 export interface PDFPageProxy {
-  getViewport: (options: { scale: number }) => PDFViewport;
+  getViewport: (options: { scale: number; rotation?: number }) => PDFViewport;
   render: (renderContext: PDFRenderContext) => { promise: Promise<void> };
 }
 

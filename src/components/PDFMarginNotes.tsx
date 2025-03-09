@@ -56,6 +56,8 @@ const PDFMarginNotes: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   const notesContainerRef = useRef<HTMLDivElement>(null);
+  const isRenderingInProgress = useRef<boolean>(false);
+  const pendingScaleUpdate = useRef<number | null>(null);
 
   // Custom styles for components
   useEffect(() => {
@@ -235,10 +237,19 @@ const PDFMarginNotes: React.FC = () => {
   // Render the current page
   const renderPage = useCallback(async () => {
     if (!pdfDoc || !canvasRef.current) return;
-
+    
+    // If rendering is already in progress, just update the state
+    // and let the current rendering finish
+    if (isRenderingInProgress.current) {
+      return;
+    }
+    
+    isRenderingInProgress.current = true;
+    
     try {
       const page = await pdfDoc.getPage(currentPage);
-      const viewport = page.getViewport({ scale });
+      // Always use rotation 0 to prevent the document from flipping upside down
+      const viewport = page.getViewport({ scale, rotation: 0 });
       
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
@@ -256,9 +267,21 @@ const PDFMarginNotes: React.FC = () => {
       };
       
       await page.render(renderContext).promise;
+      
+      // Check if there's a pending scale update that came in while rendering
+      if (pendingScaleUpdate.current !== null && pendingScaleUpdate.current !== scale) {
+        const nextScale = pendingScaleUpdate.current;
+        pendingScaleUpdate.current = null;
+        // Schedule the update for the next tick to avoid render loops
+        setTimeout(() => {
+          setScale(nextScale);
+        }, 0);
+      }
     } catch (err) {
       console.error('Error rendering page:', err);
       setError('Error rendering page. Please try again.');
+    } finally {
+      isRenderingInProgress.current = false;
     }
   }, [pdfDoc, currentPage, scale]);
 
@@ -277,14 +300,19 @@ const PDFMarginNotes: React.FC = () => {
 
   // Zoom functions
   const zoomIn = () => {
-    setScale(prevScale => Math.min(prevScale + 0.2, 3.0));
+    const newScale = Math.min((pendingScaleUpdate.current || scale) + 0.2, 3.0);
+    pendingScaleUpdate.current = newScale;
+    setScale(newScale);
   };
 
   const zoomOut = () => {
-    setScale(prevScale => Math.max(prevScale - 0.2, 0.5));
+    const newScale = Math.max((pendingScaleUpdate.current || scale) - 0.2, 0.5);
+    pendingScaleUpdate.current = newScale;
+    setScale(newScale);
   };
 
   const resetZoom = () => {
+    pendingScaleUpdate.current = 1.0;
     setScale(1.0);
   };
 
